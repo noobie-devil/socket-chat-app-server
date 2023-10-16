@@ -1,11 +1,11 @@
-const express = require('express')
-const app = express()
-const port = 3000
+import {app, socketServer} from './src/app.js'
+import config from './src/utils/global.config.js'
 
-app.get('/', (req, res) => {
-  res.send('Hello World!')
+socketServer.on("connection", (socket) => {
+  console.log("Connect socket")
+})
+const serverApp = app.listen(config.SERVER.PORT, () => {
+  console.log(`Example app listening on port ${config.SERVER.PORT}`)
 })
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
-})
+socketServer.attach(serverApp)
