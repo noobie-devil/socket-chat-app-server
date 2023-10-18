@@ -17,8 +17,14 @@ const longTimestampsPlugin = function(schema, options) {
     });
 
 }
+const asyncHandler = (handler) => {
+    return (req, res, next) => {
+        handler(req, res, next).catch(next)
+    }
+}
 
 export {
     dateToNumber,
-    longTimestampsPlugin
+    longTimestampsPlugin,
+    asyncHandler
 }

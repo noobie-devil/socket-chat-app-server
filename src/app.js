@@ -7,7 +7,9 @@ import { Server } from "socket.io";
 import {createServer} from "node:http";
 import Conversation from "./models/conversation.model.js";
 import User from "./models/user.model.js";
-import mongoose from "mongoose";
+import router from "./routes/index.js";
+import {errorHandler, notFound} from "./middlewares/errors.middleware.js";
+import {findConversation} from "./repositories/conversation.repository.js";
 
 
 const app = express()
@@ -20,35 +22,51 @@ app
     .use(helmet.permittedCrossDomainPolicies())
     .use(compression())
     .use(cors())
+    .use('/api', router)
+    .use(notFound)
+    .use(errorHandler)
 
 const httpServer = createServer(app)
 const io = new Server(httpServer, {})
 
-const users = {}
-const rooms = {}
+let users = {}
+let rooms = {}
 
 const publishActionNs = io.of("/")
 publishActionNs.on("connection", (socket) => {
-    socket.on('register', (data) => {
+    console.log(`Socket ${socket.id} connected`)
+
+    socket.on('register', (data, callback) => {
+        console.log(`register event: socket ${socket.id} - data: ` + data.toString())
         const { id, username } = data
-        users[id] = {
+        // users[id] = {
+        //     socketId: socket.id,
+        //     username: username
+        // }
+        const saved = {
             socketId: socket.id,
             username: username
         }
+        users[id] = saved
+        console.log(users)
+        callback({success: true, data: { saved }})
+
     })
 
     socket.on("newConversation", async (data, callback) => {
-        const {receiverId, senderId, message, messageType, senderUsername, sendAt} = data
-        const conversation = existConversation(receiverId, senderId)
+        let {receiverId, senderId, message, messageType, senderUsername, sendAt} = data
+        sendAt = new Date().getTime()
+        const conversation = findConversation(receiverId, senderId)
         let conversationId = null
         if (!conversation) {
             try {
                 const nwConv = await Conversation.create(newConversationObj(receiverId, senderId, message, messageType, senderUsername, sendAt))
+                console.log(nwConv)
                 await User.findByIdAndUpdate(receiverId, { $push: {conversations: nwConv._id}})
                 await User.findByIdAndUpdate(senderId, { $push: {conversations: nwConv._id}})
                 conversationId = nwConv._id
             } catch (e) {
-
+                console.log(e)
             }
         } else {
             conversationId = conversation._id
@@ -58,13 +76,20 @@ publishActionNs.on("connection", (socket) => {
             const senderSocketId = users[senderId].socketId
             if(receiverSocketId) {
                 publishActionNs.to(receiverSocketId).socketsJoin(conversationId)
-                publishActionNs.to(receiverSocketId).emit('newConversation', { conversationId: conversationId})
+                publishActionNs.to(receiverSocketId).emit('/', {
+                    conversationId: conversationId,
+                    event: "newConversation",
+                    message,
+                    messageType,
+                    sender: senderUsername,
+                    sendAt
+                })
 
             }
             if(senderSocketId) {
                 publishActionNs.to(senderSocketId).socketsJoin(conversationId)
                 rooms[conversationId] = publishActionNs.to(conversationId)
-                callback({success: true, data: {conversationId: conversationId} })
+                callback({success: true, data: {conversationId} })
             }
             return
         }
@@ -116,26 +141,7 @@ const newConversationObj = (receiverId, senderId, message, messageType, senderUs
     }
 }
 
-const existConversation = async(receiverId, senderId) => {
-    try {
-        const found = await User.findOne({ _id: senderId}, 'conversations')
-            .populate({
-                path: 'conversations',
-                match: {
-                    $or: [
-                        { createdBy: receiverId},
-                        { userJoined: { "$in": [receiverId] }}
-                    ]
-                }
-            }, 'conversations')
-        if(!found.conversations && found.conversations.length > 0) {
-            return found.conversations[0]
-        }
-        return null
-    } catch (e) {
-        console.log(e)
-    }
-}
+
 
 export {
     httpServer, io

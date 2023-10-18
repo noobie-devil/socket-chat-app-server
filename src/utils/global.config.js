@@ -13,5 +13,8 @@ const getEnvVariable = (key) => {
 export default {
     SERVER: {
         PORT: +getEnvVariable('PORT'),
+    },
+    MONGODB: {
+        URL:getEnvVariable('MONGO_URL')
     }
 }
